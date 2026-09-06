@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vade Retro GAIme</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
+
+  :root{
+    --bg: #0d1117;
+    --panel: #151b23;
+    --panel-2: #1b232d;
+    --amber: #ffb000;
+    --amber-dim: #b57e00;
+    --cyan: #4fd1c5;
+    --text: #e8e6e1;
+    --text-dim: #9aa3ab;
+    --line: #2a333d;
+    --paper: #f4f0e6;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height:100vh;
+  }
+  ::selection{ background: var(--amber); color:#111; }
+
+  /* Scanline / CRT texture on background only, subtle */
+  .crt-bg{
+    position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode: overlay;
+    opacity:0.5;
+  }
+
+  header{
+    position: sticky; top:0; z-index:20;
+    background: linear-gradient(180deg, var(--bg) 70%, transparent);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 20px;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:16px;
+    backdrop-filter: blur(6px);
+  }
+  .brand{
+    display:flex; align-items:baseline; gap:10px;
+    cursor:pointer;
+  }
+  .brand .glyph{
+    font-family:'Press Start 2P', monospace;
+    color: var(--amber);
+    font-size:14px;
+    text-shadow: 0 0 8px rgba(255,176,0,0.5);
+  }
+  .brand .sub{
+    color: var(--text-dim);
+    font-size:11px;
+    letter-spacing:0.5px;
+  }
+  .headerctrls{ display:flex; align-items:center; gap:10px; }
+  .iconbtn{
+    background: var(--panel);
+    border:1px solid var(--line);
+    color: var(--text);
+    width:38px; height:38px;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    font-size:16px;
+    border-radius:3px;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .iconbtn:hover{ border-color: var(--amber); color: var(--amber); }
+  .iconbtn:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible{
+    outline: 2px solid var(--cyan); outline-offset:2px;
+  }
+
+  .layout{
+    position:relative; z-index:1;
+    display:flex;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* Sidebar / TOC */
+  .toc{
+    width: 280px;
+    flex-shrink:0;
+    border-right: 1px solid var(--line);
+    height: calc(100vh - 66px);
+    position: sticky;
+    top: 66px;
+    overflow-y: auto;
+    padding: 18px 0 60px;
+  }
+  .toc::-webkit-scrollbar{ width:8px; }
+  .toc::-webkit-scrollbar-thumb{ background: var(--line); border-radius:4px; }
+
+  .toc-search{
+    margin: 0 16px 16px;
+    position: relative;
+  }
+  .toc-search input{
+    width:100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 9px 10px;
+    font-family:'Space Mono', monospace;
+    font-size: 12.5px;
+    border-radius:3px;
+  }
+  .toc-search input::placeholder{ color: var(--text-dim); }
+  .toc-search input:focus{ border-color: var(--amber); outline:none; }
+
+  .toc-list{ list-style:none; margin:0; padding:0; }
+  .toc-item{
+    display:block;
+    padding: 8px 16px 8px 20px;
+    color: var(--text-dim);
+    text-decoration:none;
+    font-size: 12.5px;
+    line-height:1.4;
+    border-left: 3px solid transparent;
+    cursor:pointer;
+    transition: color .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .toc-item:hover{ color: var(--text); background: rgba(255,255,255,0.03); }
+  .toc-item.active{
+    color: var(--amber);
+    border-left-color: var(--amber);
+    background: rgba(255,176,0,0.06);
+  }
+  .toc-item .pn{ color: var(--text-dim); margin-right:8px; font-size:11px; }
+
+  /* Main reader */
+  .reader{
+    flex:1;
+    min-width:0;
+    padding: 30px 40px 100px;
+  }
+
+  .hero{
+    text-align:center;
+    padding: 60px 20px 40px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 40px;
+  }
+  .hero h1{
+    font-family:'Press Start 2P', monospace;
+    font-size: clamp(20px, 4vw, 34px);
+    color: var(--amber);
+    text-shadow: 0 0 14px rgba(255,176,0,0.35), 0 0 2px rgba(255,176,0,0.6);
+    margin: 0 0 18px;
+    line-height:1.6;
+  }
+  .hero p{
+    color: var(--text-dim);
+    font-family:'Source Serif 4', serif;
+    font-size: 16px;
+    max-width: 560px;
+    margin: 0 auto 26px;
+  }
+  .hero .startbtn{
+    display:inline-block;
+    background: var(--amber);
+    color: #111;
+    font-family:'Space Mono', monospace;
+    font-weight:700;
+    padding: 12px 26px;
+    text-decoration:none;
+    border-radius: 3px;
+    letter-spacing:0.5px;
+    cursor:pointer;
+    border:none;
+    font-size:14px;
+  }
+  .hero .startbtn:hover{ background:#ffc233; }
+
+  .page-frame{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow:hidden;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .page-image-wrap{
+    background: #000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    line-height:0;
+  }
+  .page-image-wrap img{
+    width:100%;
+    height:auto;
+    display:block;
+  }
+  .page-meta{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line);
+    color: var(--text-dim);
+    font-size:12px;
+  }
+  .page-chip{
+    background: var(--panel-2);
+    border:1px solid var(--line);
+    color: var(--cyan);
+    padding: 2px 8px;
+    border-radius:3px;
+    font-size:11px;
+  }
+
+  .page-text{
+    max-width: 700px;
+    margin: 26px auto 0;
+    background: var(--paper);
+    color: #1c1a15;
+    padding: 34px 40px;
+    border-radius: 4px;
+    font-family:'Source Serif 4', serif;
+    font-size: 17px;
+    line-height:1.7;
+    white-space: pre-wrap;
+  }
+  .page-text mark{
+    background: var(--amber);
+    color: #111;
+    padding:0 2px;
+  }
+
+  .nav-row{
+    max-width: 760px;
+    margin: 30px auto 0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 12px;
+  }
+  .nav-btn{
+    background: var(--panel);
+    border:1px solid var(--line);
+    color: var(--text);
+    padding: 12px 20px;
+    font-family:'Space Mono', monospace;
+    font-size:13px;
+    cursor:pointer;
+    border-radius:3px;
+    display:flex; align-items:center; gap:8px;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .nav-btn:hover:not(:disabled){ border-color: var(--amber); color:var(--amber); }
+  .nav-btn:disabled{ opacity:0.3; cursor:default; }
+  .nav-center{
+    color: var(--text-dim);
+    font-size:12.5px;
+    text-align:center;
+  }
+  .jumpbox{
+    display:flex; align-items:center; gap:6px; justify-content:center; margin-top:6px;
+  }
+  .jumpbox input{
+    width:52px;
+    background: var(--panel);
+    border:1px solid var(--line);
+    color: var(--text);
+    text-align:center;
+    padding:5px;
+    font-family:'Space Mono', monospace;
+    border-radius:3px;
+    font-size:12px;
+  }
+
+  /* Search results overlay in TOC */
+  .search-results{ padding: 0 8px; }
+  .search-hit{
+    display:block;
+    padding: 10px 12px;
+    margin: 0 8px 8px;
+    background: var(--panel);
+    border:1px solid var(--line);
+    border-radius:3px;
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor:pointer;
+    line-height:1.5;
+  }
+  .search-hit:hover{ border-color: var(--amber); }
+  .search-hit b{ color: var(--amber); }
+  .search-hit .snip{ color: var(--text); }
+  .no-toc-label{
+    padding: 6px 16px; color: var(--text-dim); font-size:10.5px; letter-spacing:0.5px; text-transform:uppercase; opacity:0.6;
+  }
+
+  /* Mobile */
+  .toc-toggle{ display:none; }
+  @media (max-width: 900px){
+    .toc{
+      position: fixed;
+      left:0; top:0; bottom:0;
+      width: 82vw;
+      max-width: 320px;
+      z-index: 30;
+      background: var(--bg);
+      transform: translateX(-100%);
+      transition: transform .2s ease;
+      height:100vh;
+      top:0;
+      padding-top: 70px;
+    }
+    .toc.open{ transform: translateX(0); box-shadow: 8px 0 30px rgba(0,0,0,0.5); }
+    .toc-toggle{ display:flex; }
+    .reader{ padding: 20px 16px 80px; }
+    .page-text{ padding: 24px 20px; font-size:16px; }
+    .hero{ padding: 40px 14px 30px; }
+    .overlay-scrim{
+      display:none;
+      position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:25;
+    }
+    .overlay-scrim.show{ display:block; }
+  }
+
+  a{ color: var(--cyan); }
+
+  .footer-note{
+    text-align:center;
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="crt-bg"></div>
+
+<header>
+  <div class="brand" id="logoHome">
+    <button class="iconbtn toc-toggle" id="tocToggle" aria-label="Apri indice">☰</button>
+    <span class="glyph">VADE RETRO</span>
+    <span class="sub">GAIme</span>
+  </div>
+  <div class="headerctrls">
+    <span class="nav-center" id="headerPageInfo" style="display:none;"></span>
+  </div>
+</header>
+
+<div class="overlay-scrim" id="scrim"></div>
+
+<div class="layout">
+  <nav class="toc" id="toc">
+    <div class="toc-search">
+      <input type="text" id="searchInput" placeholder="Cerca nel libro…" autocomplete="off">
+    </div>
+    <div id="tocBody"></div>
+  </nav>
+
+  <main class="reader" id="reader">
+    <!-- content injected by JS -->
+  </main>
+</div>
+
+<script>
+const state = {
+  data: null,
+  currentPage: 1,
+  view: 'home' // 'home' | 'page'
+};
+
+async function init(){
+  const res = await fetch('data.json');
+  state.data = await res.json();
+  buildTOC();
+  renderHome();
+  bindGlobalEvents();
+}
+
+function buildTOC(){
+  const body = document.getElementById('tocBody');
+  body.innerHTML = '';
+  const label = document.createElement('div');
+  label.className = 'no-toc-label';
+  label.textContent = 'Indice';
+  body.appendChild(label);
+
+  const list = document.createElement('ul');
+  list.className = 'toc-list';
+  list.id = 'tocList';
+  state.data.chapters.forEach(ch => {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.className = 'toc-item';
+    a.dataset.page = ch.page;
+    a.innerHTML = `<span class="pn">${String(ch.page).padStart(3,'0')}</span>${escapeHtml(ch.title)}`;
+    a.addEventListener('click', () => goToPage(ch.page));
+    li.appendChild(a);
+    list.appendChild(li);
+  });
+  body.appendChild(list);
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderHome(){
+  state.view = 'home';
+  document.getElementById('headerPageInfo').style.display = 'none';
+  setActiveTOC(null);
+  const reader = document.getElementById('reader');
+  reader.innerHTML = `
+    <div class="hero">
+      <h1>VADE RETRO<br>GAIme</h1>
+      <p>Un racconto illustrato sulla storia dei videogiochi e degli home computer — dalla preistoria del gioco all'intelligenza artificiale generativa. ${state.data.totalPages} pagine da sfogliare.</p>
+      <button class="startbtn" id="startReading">Inizia a leggere →</button>
+    </div>
+    <div class="footer-note">Ricava dal PDF originale · sfoglia dall'indice a sinistra o usa i tasti ← →</div>
+  `;
+  document.getElementById('startReading').addEventListener('click', () => goToPage(1));
+  window.scrollTo(0,0);
+}
+
+function currentChapterTitleForPage(pageNum){
+  let title = null;
+  for (const ch of state.data.chapters){
+    if (ch.page <= pageNum) title = ch.title;
+    else break;
+  }
+  return title;
+}
+
+function renderPage(pageNum){
+  state.view = 'page';
+  state.currentPage = pageNum;
+  const total = state.data.totalPages;
+  const pageData = state.data.pages.find(p => p.page === pageNum);
+  const chapterTitle = currentChapterTitleForPage(pageNum);
+
+  document.getElementById('headerPageInfo').style.display = 'inline';
+  document.getElementById('headerPageInfo').textContent = `${chapterTitle ? chapterTitle + ' · ' : ''}pag. ${pageNum} / ${total}`;
+
+  setActiveTOC(pageNum);
+
+  const imgFile = `pages/pg-${String(pageNum).padStart(3,'0')}.jpg`;
+
+  const reader = document.getElementById('reader');
+  reader.innerHTML = `
+    <div class="page-frame">
+      <div class="page-image-wrap">
+        <img src="${imgFile}" alt="Pagina ${pageNum} del libro" loading="eager">
+      </div>
+      <div class="page-meta">
+        <span>${chapterTitle ? escapeHtml(chapterTitle) : ''}</span>
+        <span class="page-chip">pag. ${pageNum}</span>
+      </div>
+    </div>
+
+    <div class="page-text">${escapeHtml(pageData ? pageData.text : '')}</div>
+
+    <div class="nav-row">
+      <button class="nav-btn" id="prevBtn" ${pageNum <= 1 ? 'disabled' : ''}>← Precedente</button>
+      <div class="nav-center">
+        <div>pagina ${pageNum} di ${total}</div>
+        <div class="jumpbox">
+          <input type="number" id="jumpInput" min="1" max="${total}" value="${pageNum}">
+          <button class="nav-btn" id="jumpBtn" style="padding:6px 12px;">Vai</button>
+        </div>
+      </div>
+      <button class="nav-btn" id="nextBtn" ${pageNum >= total ? 'disabled' : ''}>Successiva →</button>
+    </div>
+  `;
+
+  document.getElementById('prevBtn').addEventListener('click', () => goToPage(pageNum - 1));
+  document.getElementById('nextBtn').addEventListener('click', () => goToPage(pageNum + 1));
+  document.getElementById('jumpBtn').addEventListener('click', () => {
+    const v = parseInt(document.getElementById('jumpInput').value, 10);
+    if (v >= 1 && v <= total) goToPage(v);
+  });
+  document.getElementById('jumpInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('jumpBtn').click();
+  });
+
+  window.scrollTo(0,0);
+  closeMobileTOC();
+}
+
+function goToPage(n){
+  const total = state.data.totalPages;
+  n = Math.max(1, Math.min(total, n));
+  renderPage(n);
+}
+
+function setActiveTOC(pageNum){
+  document.querySelectorAll('.toc-item').forEach(el => el.classList.remove('active'));
+  if (pageNum == null) return;
+  // find the chapter item whose page is the closest <= pageNum
+  let best = null;
+  document.querySelectorAll('.toc-item').forEach(el => {
+    const p = parseInt(el.dataset.page, 10);
+    if (p <= pageNum && (best === null || p > best)) best = p;
+  });
+  if (best !== null){
+    const el = document.querySelector(`.toc-item[data-page="${best}"]`);
+    if (el) {
+      el.classList.add('active');
+      el.scrollIntoView({block:'nearest'});
+    }
+  }
+}
+
+function bindGlobalEvents(){
+  document.getElementById('logoHome').addEventListener('click', renderHome);
+  document.getElementById('tocToggle').addEventListener('click', () => {
+    document.getElementById('toc').classList.add('open');
+    document.getElementById('scrim').classList.add('show');
+  });
+  document.getElementById('scrim').addEventListener('click', closeMobileTOC);
+
+  document.addEventListener('keydown', (e) => {
+    if (state.view !== 'page') return;
+    if (document.activeElement && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowRight') goToPage(state.currentPage + 1);
+    if (e.key === 'ArrowLeft') goToPage(state.currentPage - 1);
+  });
+
+  const searchInput = document.getElementById('searchInput');
+  let debounceTimer;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => runSearch(searchInput.value.trim()), 200);
+  });
+}
+
+function closeMobileTOC(){
+  document.getElementById('toc').classList.remove('open');
+  document.getElementById('scrim').classList.remove('show');
+}
+
+function runSearch(query){
+  const tocBody = document.getElementById('tocBody');
+  if (!query){
+    buildTOC();
+    setActiveTOC(state.view === 'page' ? state.currentPage : null);
+    return;
+  }
+  const q = query.toLowerCase();
+  const hits = [];
+  state.data.pages.forEach(p => {
+    const idx = p.text.toLowerCase().indexOf(q);
+    if (idx !== -1){
+      const start = Math.max(0, idx - 40);
+      const end = Math.min(p.text.length, idx + q.length + 60);
+      let snippet = p.text.slice(start, end).replace(/\n/g, ' ');
+      if (start > 0) snippet = '…' + snippet;
+      if (end < p.text.length) snippet = snippet + '…';
+      hits.push({page: p.page, snippet});
+    }
+  });
+
+  tocBody.innerHTML = '';
+  const label = document.createElement('div');
+  label.className = 'no-toc-label';
+  label.textContent = `${hits.length} risultati`;
+  tocBody.appendChild(label);
+
+  const container = document.createElement('div');
+  container.className = 'search-results';
+  if (hits.length === 0){
+    const p = document.createElement('div');
+    p.className = 'no-toc-label';
+    p.textContent = 'Nessun risultato';
+    container.appendChild(p);
+  }
+  hits.slice(0, 80).forEach(h => {
+    const div = document.createElement('div');
+    div.className = 'search-hit';
+    const re = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig');
+    const highlighted = escapeHtml(h.snippet).replace(re, '<mark>$1</mark>');
+    div.innerHTML = `<b>pag. ${h.page}</b><br><span class="snip">${highlighted}</span>`;
+    div.addEventListener('click', () => goToPage(h.page));
+    container.appendChild(div);
+  });
+  tocBody.appendChild(container);
+}
+
+init();
+</script>
+</body>
+</html>
