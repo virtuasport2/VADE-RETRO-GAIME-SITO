@@ -195,11 +195,21 @@
     align-items:center;
     justify-content:center;
     line-height:0;
+    min-height: 200px;
+    position: relative;
   }
-  .page-image-wrap img{
+  .page-image-wrap canvas{
     width:100%;
     height:auto;
     display:block;
+  }
+  .page-loading{
+    color: var(--text-dim);
+    font-family:'Space Mono', monospace;
+    font-size: 12.5px;
+    padding: 60px 0;
+    text-align:center;
+    width:100%;
   }
   .page-meta{
     display:flex; align-items:center; justify-content:space-between;
@@ -227,7 +237,15 @@
     font-family:'Source Serif 4', serif;
     font-size: 17px;
     line-height:1.7;
-    white-space: pre-wrap;
+  }
+  .page-text:empty{
+    display: none;
+  }
+  .page-text p{
+    margin: 0 0 1.1em;
+  }
+  .page-text p:last-child{
+    margin-bottom: 0;
   }
   .page-text mark{
     background: var(--amber);
@@ -371,11 +389,34 @@
   </main>
 </div>
 
+<!-- PDF.js: usato per disegnare ogni pagina (PDF singolo) su un canvas -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+</script>
+
+<script>
+// --- CONFIG ---
+// Il testo di ogni pagina viene comunque estratto e tenuto in data.json
+// (serve alla ricerca nell'indice, vedi runSearch più sotto), ma la sua
+// visualizzazione sotto l'immagine della pagina è disattivata: ora che il
+// rendering del PDF mostra la pagina intera (con il testo già incluso
+// nell'impaginazione originale), mostrarlo di nuovo qui sotto lo duplicava.
+// Rimane comodo tenere questo interruttore pronto: se in futuro serve di
+// nuovo un testo leggibile/accessibile separato dall'immagine (es. per
+// screen reader, per un modo "solo testo", o per un'altra rivista con
+// impaginazione diversa), basta rimetterlo a true — tutta la logica di
+// formattazione (formatExtractedText / renderPageText più sotto) resta
+// intatta e già pronta.
+const SHOW_EXTRACTED_TEXT = false;
+
 const state = {
   data: null,
   currentPage: 1,
-  view: 'home' // 'home' | 'page'
+  view: 'home', // 'home' | 'page'
+  renderToken: 0, // per evitare race condition tra render di pagine diverse
+  lastDirection: 1, // 1 = avanti, -1 = indietro (usato per saltare le pagine vuote)
+  blankPages: new Set() // pagine risultate senza testo e senza contenuto visivo
 };
 
 async function init(){
@@ -414,6 +455,33 @@ function escapeHtml(s){
   return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Il testo estratto dal PDF conserva gli "a capo" originali della pagina
+// (una riga fisica per riga di stampa). Questa funzione lo ricompone in
+// paragrafi leggibili:
+// - unisce le parole spezzate a fine riga da un trattino ("esem-\npio")
+// - unisce le righe singole in un unico paragrafo fluido
+// - mantiene come paragrafi separati i blocchi divisi da riga vuota
+function formatExtractedText(raw){
+  if (!raw) return [];
+  let text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Ricongiungi le parole spezzate da un trattino a fine riga
+  text = text.replace(/([a-zà-öø-ÿ])-\n([a-zà-öø-ÿ])/gi, '$1$2');
+
+  // Blocchi separati da una o più righe vuote = paragrafi distinti
+  const rawParagraphs = text.split(/\n\s*\n+/);
+
+  return rawParagraphs
+    .map(p => p.replace(/\n/g, ' ').replace(/[ \t]{2,}/g, ' ').trim())
+    .filter(p => p.length > 0);
+}
+
+function renderPageText(raw){
+  const paragraphs = formatExtractedText(raw);
+  if (paragraphs.length === 0) return '';
+  return paragraphs.map(p => `<p>${escapeHtml(p)}</p>`).join('');
+}
+
 function renderHome(){
   state.view = 'home';
   document.getElementById('headerPageInfo').style.display = 'none';
@@ -441,6 +509,22 @@ function currentChapterTitleForPage(pageNum){
 }
 
 function renderPage(pageNum){
+  // Se questa pagina è già nota come vuota (nessun testo + nessuna immagine),
+  // saltala subito nella direzione di navigazione invece di mostrarla.
+  if (state.blankPages.has(pageNum)){
+    const next = pageNum + state.lastDirection;
+    if (next >= 1 && next <= state.data.totalPages){
+      goToPage(next);
+      return;
+    }
+    // non c'è altra pagina in quella direzione: prova l'altra
+    const alt = pageNum - state.lastDirection;
+    if (alt >= 1 && alt <= state.data.totalPages){
+      goToPage(alt);
+      return;
+    }
+  }
+
   state.view = 'page';
   state.currentPage = pageNum;
   const total = state.data.totalPages;
@@ -452,13 +536,13 @@ function renderPage(pageNum){
 
   setActiveTOC(pageNum);
 
-  const imgFile = `pages/pg-${String(pageNum).padStart(3,'0')}.jpg`;
+  const pdfFile = `pages/Rivista_v7_pagina_${String(pageNum).padStart(3,'0')}.pdf`;
 
   const reader = document.getElementById('reader');
   reader.innerHTML = `
     <div class="page-frame">
-      <div class="page-image-wrap">
-        <img src="${imgFile}" alt="Pagina ${pageNum} del libro" loading="eager">
+      <div class="page-image-wrap" id="pageImageWrap">
+        <div class="page-loading">Caricamento pagina…</div>
       </div>
       <div class="page-meta">
         <span>${chapterTitle ? escapeHtml(chapterTitle) : ''}</span>
@@ -466,7 +550,7 @@ function renderPage(pageNum){
       </div>
     </div>
 
-    <div class="page-text">${escapeHtml(pageData ? pageData.text : '')}</div>
+    <div class="page-text">${SHOW_EXTRACTED_TEXT ? renderPageText(pageData ? pageData.text : '') : ''}</div>
 
     <div class="nav-row">
       <button class="nav-btn" id="prevBtn" ${pageNum <= 1 ? 'disabled' : ''}>← Precedente</button>
@@ -491,13 +575,97 @@ function renderPage(pageNum){
     if (e.key === 'Enter') document.getElementById('jumpBtn').click();
   });
 
+  renderPdfIntoWrap(pdfFile, pageNum, !!(pageData && pageData.text && pageData.text.trim().length > 0));
+
   window.scrollTo(0,0);
   closeMobileTOC();
+}
+
+// Controlla se un canvas è sostanzialmente vuoto (bianco/uniforme):
+// campiona una griglia di pixel invece di leggerli tutti, per restare veloce.
+function canvasIsBlank(canvas, threshold = 10){
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+  if (width === 0 || height === 0) return true;
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 60));
+  let minLum = 255, maxLum = 0;
+  const imageData = ctx.getImageData(0, 0, width, height).data;
+  for (let y = 0; y < height; y += step){
+    for (let x = 0; x < width; x += step){
+      const idx = (y * width + x) * 4;
+      const lum = 0.299 * imageData[idx] + 0.587 * imageData[idx + 1] + 0.114 * imageData[idx + 2];
+      if (lum < minLum) minLum = lum;
+      if (lum > maxLum) maxLum = lum;
+    }
+  }
+  return (maxLum - minLum) < threshold;
+}
+
+// Carica il PDF a pagina singola e lo disegna su un <canvas> dentro #pageImageWrap.
+// Se la pagina risulta senza testo e visivamente vuota, viene marcata e saltata.
+async function renderPdfIntoWrap(pdfFile, pageNum, hasText){
+  const myToken = ++state.renderToken;
+  const wrap = document.getElementById('pageImageWrap');
+
+  try {
+    const loadingTask = pdfjsLib.getDocument(pdfFile);
+    const pdf = await loadingTask.promise;
+
+    if (myToken !== state.renderToken) return;
+
+    const page = await pdf.getPage(1);
+
+    if (myToken !== state.renderToken) return;
+
+    // Rendering ad alta risoluzione (target ~1600px di larghezza) per restare nitido
+    // anche su schermi retina, poi scalato via CSS a width:100%.
+    const baseViewport = page.getViewport({ scale: 1 });
+    const targetWidth = 1600;
+    const scale = targetWidth / baseViewport.width;
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    canvas.setAttribute('aria-label', `Pagina ${pageNum} del libro`);
+    const ctx = canvas.getContext('2d');
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    if (myToken !== state.renderToken) return;
+
+    // Pagina senza testo E visivamente vuota → marcala e saltala
+    if (!hasText && canvasIsBlank(canvas)){
+      state.blankPages.add(pageNum);
+      const next = pageNum + state.lastDirection;
+      if (next >= 1 && next <= state.data.totalPages){
+        goToPage(next);
+      }
+      return;
+    }
+
+    wrap.innerHTML = '';
+    wrap.appendChild(canvas);
+  } catch (err) {
+    if (myToken !== state.renderToken) return;
+    console.error('Errore nel rendering del PDF:', pdfFile, err);
+    // Mostriamo il dettaglio dell'errore direttamente nella pagina: se il problema
+    // è l'apertura del file con doppio click (file://), il browser blocca il
+    // caricamento dei PDF via fetch anche se le immagini JPG funzionavano prima.
+    // In quel caso serve un piccolo server locale, es: python3 -m http.server
+    wrap.innerHTML = `
+      <div class="page-loading">
+        Impossibile caricare la pagina ${pageNum}.<br>
+        <span style="opacity:0.7; font-size:11px;">${escapeHtml(String(err && err.message ? err.message : err))}</span><br>
+        <span style="opacity:0.7; font-size:11px;">Se hai aperto il file con doppio click, prova ad avviare un piccolo server locale (es. <code>python3 -m http.server</code>) e apri la pagina da http://localhost.</span>
+      </div>`;
+  }
 }
 
 function goToPage(n){
   const total = state.data.totalPages;
   n = Math.max(1, Math.min(total, n));
+  state.lastDirection = n >= state.currentPage ? 1 : -1;
   renderPage(n);
 }
 
